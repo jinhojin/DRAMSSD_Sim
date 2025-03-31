@@ -225,10 +225,6 @@ public:
             double ratio = static_cast<double>(dramMiss) / static_cast<double>(totalGets);
             std::cout << "DRAM miss ratio: " << ratio << "\n";
         }
-        std::cout << "Object Access Counts:\n";
-        for (auto &p : objectAccessCount) {
-            std::cout << "  " << p.first << " : " << p.second << "\n";
-        }
     }
 };
 
