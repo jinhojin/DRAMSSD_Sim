@@ -9,6 +9,22 @@
 #include <algorithm>
 #include "include/robin_hood/robin_hood.h"
 
+struct PageEntry {
+    std::string key;
+    size_t valueSize;
+    size_t metaSize;
+};
+
+struct Page {
+    size_t globalPageID; 
+    size_t usedSpace;   
+    std::vector<PageEntry> entries;
+};
+
+struct Segment {
+    std::vector<Page> pages;
+};
+
 struct KeyValue {
     std::string key;
     size_t valueSize;
@@ -17,18 +33,10 @@ struct KeyValue {
 };
 
 struct KeyAgg {
-    size_t pageID;    
-    size_t valueSize; 
+    size_t pageID;
+    size_t valueSize;
 };
 
-struct Page {
-    size_t globalPageID; 
-    std::string key;    
-    size_t valueSize;    
-};
-struct Segment {
-    std::vector<Page> pages;
-};
 
 class Trace {
 private:
@@ -45,6 +53,7 @@ public:
             file_.close();
         }
     }
+
     std::optional<std::pair<std::string, KeyValue>> get() {
         if (!file_.is_open() || file_.eof()) {
             return std::nullopt;
@@ -68,8 +77,9 @@ public:
         std::string op      = tokens[1];
         int totalSize       = std::stoi(tokens[2]);
         int keySize         = std::stoi(tokens[4]);
-        int metaSize        = 0;  
+        int metaSize        = 0; 
         int vSize           = totalSize - keySize;
+        if (vSize < 0) vSize = 0;
 
         KeyValue kv;
         kv.key       = key;
@@ -80,6 +90,7 @@ public:
     }
 };
 
+
 class LRUCache {
     struct Node {
         KeyValue kv;
@@ -88,9 +99,7 @@ class LRUCache {
 private:
     size_t capacity_;
     size_t currentSize_;
-
     std::list<Node> itemList;
-
     std::unordered_map<std::string, std::list<Node>::iterator> cacheMap;
 
     size_t kvSize(const KeyValue &kv) const {
@@ -104,8 +113,7 @@ private:
 public:
     LRUCache(size_t capacity)
         : capacity_(capacity), currentSize_(0)
-    {
-    }
+    {}
 
     std::optional<size_t> getValueSize(const std::string &key) {
         auto it = cacheMap.find(key);
@@ -114,7 +122,6 @@ public:
         }
         auto nodeIt = it->second;
         moveToFront(nodeIt);
-
         return nodeIt->kv.valueSize;
     }
 
@@ -128,23 +135,22 @@ public:
             itemList.erase(nodeIt);
             cacheMap.erase(found);
         }
-        size_t needed = kvSize(kv);
-        if (needed > capacity_) {
+
+        size_t need = kvSize(kv);
+        if (need > capacity_) {
             return evictedItems;
         }
-
-        Node newNode{kv};
+        Node newNode{ kv };
         itemList.push_front(newNode);
         cacheMap[kv.key] = itemList.begin();
-        currentSize_ += needed;
+        currentSize_ += need;
 
-        while (currentSize_ > capacity_ && !itemList.empty()) {
+        while (currentSize_ > capacity_) {
             auto &oldNode = itemList.back();
-            KeyValue &oldKV = oldNode.kv;
+            auto &oldKV   = oldNode.kv;
             size_t oldSize = kvSize(oldKV);
             currentSize_ -= oldSize;
             evictedItems.push_back(oldKV);
-
             cacheMap.erase(oldKV.key);
             itemList.pop_back();
         }
@@ -153,75 +159,101 @@ public:
     }
 };
 
+
 class SSD {
 private:
-    static constexpr size_t SEGMENT_SIZE = 256 * 1024;
-    static constexpr size_t PAGE_SIZE    = 4 * 1024;
-
+    static constexpr size_t SEGMENT_SIZE = 256 * 1024; 
+    static constexpr size_t PAGE_SIZE    = 4 * 1024;   
     std::vector<Segment> segments;
 
     robin_hood::unordered_map<std::string, KeyAgg> mapKeyAgg;
 
-    size_t segCount;      
-    size_t pagesPerSeg;   
-    size_t totalPages;    
-    size_t writePtr;      
+    size_t segCount;
+    size_t pagesPerSeg;
+    size_t totalPages;
+
+    size_t currentPagePtr;
+
+    bool storeKeyInPage(Page &page, const KeyValue &kv) {
+        size_t need = kv.valueSize + kv.metaSize;
+        size_t freeSpace = PAGE_SIZE - page.usedSpace;
+        if (need > freeSpace) {
+            return false; 
+        }
+        PageEntry entry{ kv.key, kv.valueSize, kv.metaSize };
+        page.entries.push_back(entry);
+        page.usedSpace += need;
+        return true;
+    }
+
+    void clearPage(Page &page) {
+        for (auto &e : page.entries) {
+            auto it = mapKeyAgg.find(e.key);
+            if (it != mapKeyAgg.end()) {
+                mapKeyAgg.erase(it);
+            }
+        }
+        page.entries.clear();
+        page.usedSpace = 0;
+    }
 
 public:
     SSD(size_t capacity) {
         pagesPerSeg = SEGMENT_SIZE / PAGE_SIZE;
         segCount = capacity / SEGMENT_SIZE;
         if (segCount == 0) {
-            segCount = 1; 
+            segCount = 1;
         }
         totalPages = segCount * pagesPerSeg;
-
         segments.resize(segCount);
+
         for (size_t s = 0; s < segCount; s++) {
             segments[s].pages.resize(pagesPerSeg);
             for (size_t p = 0; p < pagesPerSeg; p++) {
                 size_t globalID = s * pagesPerSeg + p;
-                segments[s].pages[p].globalPageID = globalID;
-                segments[s].pages[p].key = "";
-                segments[s].pages[p].valueSize = 0;
+                Page &page = segments[s].pages[p];
+                page.globalPageID = globalID;
+                page.usedSpace = 0; 
             }
         }
-        writePtr = 0;
+        currentPagePtr = 0;
     }
 
     bool put(const KeyValue &kv) {
-        if (kv.valueSize > PAGE_SIZE) {
-            return false; 
+        size_t tryCount = 0;
+        size_t needed = kv.valueSize + kv.metaSize;
+        if (needed > PAGE_SIZE) {
+            return false;
         }
 
-        size_t globalID = writePtr;
-        size_t segIndex = globalID / pagesPerSeg;
-        size_t pageIndex = globalID % pagesPerSeg;
+        auto oldIt = mapKeyAgg.find(kv.key);
+        if (oldIt != mapKeyAgg.end()) {
+            erase(kv.key);
+        }
 
-        Page &oldPage = segments[segIndex].pages[pageIndex];
-        if (!oldPage.key.empty()) {
-            auto it = mapKeyAgg.find(oldPage.key);
-            if (it != mapKeyAgg.end()) {
-                mapKeyAgg.erase(it);
+        for (; tryCount < totalPages; tryCount++) {
+            size_t pageID = (currentPagePtr + tryCount) % totalPages;
+            size_t segIdx = pageID / pagesPerSeg;
+            size_t pgIdx  = pageID % pagesPerSeg;
+
+            Page &page = segments[segIdx].pages[pgIdx];
+            if (storeKeyInPage(page, kv)) {
+                KeyAgg agg{ pageID, kv.valueSize };
+                mapKeyAgg[kv.key] = agg;
+                return true;
             }
         }
 
-        oldPage.key = kv.key;
-        oldPage.valueSize = kv.valueSize;
+        size_t pageID = currentPagePtr;
+        size_t segIdx = pageID / pagesPerSeg;
+        size_t pgIdx  = pageID % pagesPerSeg;
+        Page &page = segments[segIdx].pages[pgIdx];
+        clearPage(page);
+        storeKeyInPage(page, kv);
+        KeyAgg agg{ pageID, kv.valueSize };
+        mapKeyAgg[kv.key] = agg;
 
-        auto itKey = mapKeyAgg.find(kv.key);
-        if (itKey != mapKeyAgg.end()) {
-            itKey->second.pageID = globalID;
-            itKey->second.valueSize = kv.valueSize;
-        } else {
-            KeyAgg agg;
-            agg.pageID = globalID;
-            agg.valueSize = kv.valueSize;
-            mapKeyAgg.emplace(kv.key, agg);
-        }
-
-        writePtr = (writePtr + 1) % totalPages;
-
+        currentPagePtr = (currentPagePtr + 1) % totalPages;
         return true;
     }
 
@@ -238,15 +270,19 @@ public:
         if (it == mapKeyAgg.end()) {
             return false;
         }
-        size_t globalID = it->second.pageID;
-        size_t segIndex = globalID / pagesPerSeg;
-        size_t pageIndex = globalID % pagesPerSeg;
+        size_t pageID = it->second.pageID;
+        size_t segIdx = pageID / pagesPerSeg;
+        size_t pgIdx  = pageID % pagesPerSeg;
+        Page &page = segments[segIdx].pages[pgIdx];
 
-        if (segments[segIndex].pages[pageIndex].key == key) {
-            segments[segIndex].pages[pageIndex].key.clear();
-            segments[segIndex].pages[pageIndex].valueSize = 0;
+        for (auto eIt = page.entries.begin(); eIt != page.entries.end(); ++eIt) {
+            if (eIt->key == key) {
+                size_t used = eIt->valueSize + eIt->metaSize;
+                page.usedSpace -= used;
+                page.entries.erase(eIt);
+                break;
+            }
         }
-
         mapKeyAgg.erase(it);
         return true;
     }
@@ -280,15 +316,14 @@ public:
         if (ssdVal.has_value()) {
             KeyValue promote = kv;
             promote.valueSize = ssdVal.value();
-
             auto evicted = dram_.put(promote);
             for (auto &e : evicted) {
                 ssd_.put(e);
             }
             ssd_.erase(kv.key);
-
             return promote.valueSize;
         }
+
         auto evicted = dram_.put(kv);
         for (auto &e : evicted) {
             ssd_.put(e);
