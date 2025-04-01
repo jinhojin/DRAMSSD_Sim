@@ -14,7 +14,9 @@ std::vector<Fifo::Item> Fifo::insert(const std::string &key, uint32_t size) {
     }
 
     if (curSegmentPtr % 1000 == 0) {
-      std::cout << fmt::format("Use {} segments out of {}", curSegmentPtr, numTotalSegments) << std::endl;
+      std::cout << fmt::format("Use {} segments out of {}", curSegmentPtr,
+                               numTotalSegments)
+                << std::endl;
     }
 
     victims = segments[curSegmentPtr].clear();
@@ -22,8 +24,14 @@ std::vector<Fifo::Item> Fifo::insert(const std::string &key, uint32_t size) {
       victim.rotationCounter = rotationCounter - 1;
       overwrittenItems[victim.key] = victim;
       keyToSegId.erase(victim.key);
+      assert(victim.segId == curSegmentPtr);
 
-      overwrittenLogFile_ << fmt::format("{}", victim.numAccesses) << std::endl;
+      overwrittenLogFile_ << fmt::format(
+                                 "{} {}",
+                                 getGlobalSegmentPtr(victim.rotationCounter,
+                                                     curSegmentPtr),
+                                 victim.numAccesses)
+                          << std::endl;
     }
   }
 
