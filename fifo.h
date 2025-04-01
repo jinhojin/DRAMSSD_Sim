@@ -4,6 +4,7 @@
 #include <cassert>
 #include <cstdint>
 #include <fstream>
+#include <iostream>
 #include <numeric>
 #include <optional>
 #include <vector>
@@ -14,7 +15,7 @@
 class Fifo {
 public:
   struct Item {
-    static constexpr uint32_t kMetadataSize = 0;
+    static constexpr uint32_t kMetadataSize = 20;
     std::string key;
     uint32_t size{0};
     uint32_t numAccesses{0};
@@ -33,12 +34,14 @@ private:
     Page(uint32_t segId, uint32_t pageId)
         : segId(segId), pageId(pageId), freeCapacity(kPageSize) {}
 
-    bool isFull(uint32_t size) const { return freeCapacity < size; }
+    bool isFull(uint32_t size) const {
+      return freeCapacity < size + Fifo::Item::kMetadataSize;
+    }
 
     uint32_t insert(const std::string &key, uint32_t size) {
-      Fifo::Item item = {key, size, 0, segId};
-      freeCapacity -= item.getSize();
-      items[key] = item;
+      assert(freeCapacity >= size + Fifo::Item::kMetadataSize);
+      freeCapacity -= (size + Fifo::Item::kMetadataSize);
+      items[key] = {key, size, 0, segId};
       return pageId;
     }
 
@@ -84,19 +87,22 @@ private:
   public:
     static constexpr uint32_t kSegmentSize = 256 * 1024;
 
-    Segment(uint32_t segId) : segId_(segId) {
+    Segment(uint32_t segId) : segId_(segId), pageIdx_(0) {
       const uint32_t numPagesPerSegment = kSegmentSize / Page::kPageSize;
-      for (uint32_t pageId = segId; pageId < numPagesPerSegment; ++pageId) {
+      uint32_t startPageId = segId * numPagesPerSegment;
+      uint32_t endPageId = (segId + 1) * numPagesPerSegment;
+      for (uint32_t pageId = startPageId; pageId < endPageId; ++pageId) {
         pages_.push_back({segId, pageId});
       }
     }
 
     bool isFull(uint32_t size) const {
       return (pageIdx_ == pages_.size()) ||
-             ((pageIdx_ == pages_.size() - 1) && pages_[pageIdx_].isFull(size));
+             (pageIdx_ == pages_.size() - 1 && pages_[pageIdx_].isFull(size));
     }
 
     uint32_t insert(const std::string &key, uint32_t size) {
+      assert(pageIdx_ < pages_.size());
       if (pages_[pageIdx_].isFull(size)) {
         pageIdx_++;
       }
@@ -115,6 +121,7 @@ private:
             return acc + page.getNumItems();
           });
       if (numVictims == 0) {
+        assert(pageIdx_ == 0);
         return {};
       }
 
@@ -123,18 +130,21 @@ private:
       for (uint32_t i = 0; i < pages_.size(); ++i) {
         pages_[i].clear(victims);
       }
+
+      pageIdx_ = 0;
       return victims;
     }
 
     void remove(const std::string &key, uint32_t pageId) {
       uint32_t targetPageIdx = pageId % (kSegmentSize / Page::kPageSize);
+      assert(targetPageIdx < pages_.size());
       return pages_[targetPageIdx].remove(key);
     }
 
   private:
     const uint32_t segId_;
-    std::vector<Page> pages_;
     uint32_t pageIdx_;
+    std::vector<Page> pages_;
   };
 
 public:

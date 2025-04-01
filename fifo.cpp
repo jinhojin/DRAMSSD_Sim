@@ -22,8 +22,12 @@ std::vector<Fifo::Item> Fifo::insert(const std::string &key, uint32_t size) {
     }
   }
 
-  segments[curSegmentPtr].insert(key, size);
-  keyToSegId[key] = curSegmentPtr;
+  assert(curSegmentPtr < numTotalSegments);
+
+  // Remove if key already exists
+  remove(key);
+  uint32_t pageId = segments[curSegmentPtr].insert(key, size);
+  keyToSegId[key] = pageId;
 
   return victims;
 }
