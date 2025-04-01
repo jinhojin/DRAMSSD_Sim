@@ -13,10 +13,15 @@ std::vector<Fifo::Item> Fifo::insert(const std::string &key, uint32_t size) {
       std::cout << fmt::format("Rotation count increases") << std::endl;
     }
 
+    if (curSegmentPtr % 1000 == 0) {
+      std::cout << fmt::format("Use {} segments out of {}", curSegmentPtr, numTotalSegments) << std::endl;
+    }
+
     victims = segments[curSegmentPtr].clear();
     for (auto &victim : victims) {
       victim.rotationCounter = rotationCounter - 1;
       overwrittenItems[victim.key] = victim;
+      keyToSegId.erase(victim.key);
 
       overwrittenLogFile_ << fmt::format("{}", victim.numAccesses) << std::endl;
     }
@@ -24,8 +29,8 @@ std::vector<Fifo::Item> Fifo::insert(const std::string &key, uint32_t size) {
 
   assert(curSegmentPtr < numTotalSegments);
 
-  // Remove if key already exists
   remove(key);
+  // Remove if key already exists
   uint32_t pageId = segments[curSegmentPtr].insert(key, size);
   keyToSegId[key] = pageId;
 
@@ -40,7 +45,9 @@ std::optional<Fifo::Item> Fifo::lookup(const std::string &key) {
 
     uint32_t pageId = it->second;
     uint32_t segId = pageId / numPagesPerSegment;
-    return segments[segId].lookup(key, pageId);
+    const auto item = segments[segId].lookup(key, pageId);
+    assert(item.has_value());
+    return item;
   }
 
   if (auto it = overwrittenItems.find(key); it != std::end(overwrittenItems)) {

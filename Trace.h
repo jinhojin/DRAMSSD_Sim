@@ -1,11 +1,13 @@
 #pragma once
 
 #include <filesystem>
+#include <iostream>
 #include <memory>
 #include <optional>
 #include <vector>
 
 #include "include/csv.h"
+#include "include/fmt/core.h"
 
 class Trace {
 public:
@@ -44,6 +46,9 @@ public:
 
     if (!isValid) {
       if (auto nextFile = nextTraceFilePath()) {
+        std::cout << fmt::format("Processing next file: {}",
+                                 nextFile.value().string())
+                  << std::endl;
         csvFile = std::make_unique<io::CSVReader<4>>(nextFile.value());
         csvFile->read_header(io::ignore_extra_column, "key", "size", "op",
                              "op_count");
