@@ -1,6 +1,14 @@
 #include "fifo.h"
 #include <iostream>
 
+#define ASSERT_WITH_MSG(expr, msg)                                             \
+  do {                                                                         \
+    if (!(expr)) {                                                             \
+      std::cout << "Assertion failed: " << msg << std::endl;                   \
+      assert(expr);                                                            \
+    }                                                                          \
+  } while (0)
+
 std::vector<Fifo::Item> Fifo::insert(const DRAMCache::Item &dramItem) {
   std::vector<Item> victims;
   // This happens only when clear threshold is not 0.
@@ -17,7 +25,8 @@ std::vector<Fifo::Item> Fifo::insert(const DRAMCache::Item &dramItem) {
       victim.rotationCounter = rotationCounter - 1;
       overwrittenItems[victim.key] = victim;
       keyToSegId.erase(victim.key);
-      assert(victim.segId == curSegmentPtr);
+      ASSERT_WITH_MSG(victim.segId == curSegmentPtr,
+                      fmt::format("{}, {}", victim.segId, curSegmentPtr));
       assert(keyToDramAccessCounter.contains(victim.key));
       assert(keyToReuseDistance.contains(victim.key));
 
@@ -43,7 +52,8 @@ std::vector<Fifo::Item> Fifo::insert(const DRAMCache::Item &dramItem) {
   keyToReuseDistance[dramItem.key].push_back(
       getGlobalSegmentPtr(rotationCounter, curSegmentPtr));
 
-  assert(curSegmentPtr < numTotalSegments);
+  ASSERT_WITH_MSG(curSegmentPtr < numTotalSegments,
+                  fmt::format("{}, {}", curSegmentPtr, numTotalSegments));
 
   remove(dramItem.key);
   // Remove if key already exists

@@ -20,7 +20,6 @@ public:
     std::string key;
     uint32_t size{0};
     uint32_t numAccesses{0};
-    uint32_t numAccessesInDram{0};
     uint32_t segId{0};
     uint32_t rotationCounter{0};
     bool isErased{false};
@@ -43,7 +42,12 @@ private:
     uint32_t insert(const std::string &key, uint32_t size) {
       assert(freeCapacity >= size + Fifo::Item::kMetadataSize);
       freeCapacity -= (size + Fifo::Item::kMetadataSize);
-      items[key] = {key, size, 0, segId};
+      items[key] = {.key = key,
+                    .size = size,
+                    .numAccesses = 0,
+                    .segId = segId,
+                    .rotationCounter = 0,
+                    .isErased = false};
       return pageId;
     }
 

@@ -16,15 +16,15 @@ std::vector<DRAMCache::Item> DRAMCache::insert(const std::string &key,
   std::vector<DRAMCache::Item> victims;
   while (freeCapacity < size) {
     const auto &victim = lru.back();
+    victims.push_back(victim);
 
     freeCapacity += victim.size;
     keyToLru.erase(victim.key);
-
-    victims.push_back(victim);
     lru.pop_back();
   }
 
-  lru.push_front({key, size, 0, isInFifo});
+  lru.push_front(
+      {.key = key, .size = size, .numAccesses = 0, .isInFifo = isInFifo});
   keyToLru[key] = std::begin(lru);
   assert(freeCapacity >= size);
   freeCapacity -= size;
