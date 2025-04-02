@@ -6,6 +6,8 @@ void DRAMCache::remove(const std::string &key) {
     assert(it->second->key == key);
     lru.erase(it->second);
     keyToLru.erase(it);
+
+    freeCapacity += it->second->size;
   }
 }
 
@@ -37,13 +39,11 @@ std::optional<DRAMCache::Item> DRAMCache::lookup(const std::string &key) {
     stat.numDramHits++;
 
     assert(it->second->key == key);
-    auto item = *(it->second);
-    item.numAccesses++;
-    lru.erase(it->second);
-    lru.push_front(item);
-    it->second = std::begin(lru);
+    lru.splice(std::begin(lru), lru, it->second);
+    assert(it->second == std::begin(lru));
+    it->second->numAccesses++;
 
-    return std::make_optional(item);
+    return *(it->second);
   }
   return std::nullopt;
 }
