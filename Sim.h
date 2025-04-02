@@ -24,7 +24,7 @@ public:
 
       for (const auto &victim : victimsFromDram) {
         if (!victim.isInFifo) {
-          fifo_.insert(key, victim.size);
+          fifo_.insert(victim);
         }
       }
       return true;
@@ -38,7 +38,7 @@ public:
 
     for (const auto &victim : victimsFromDram) {
       if (!victim.isInFifo) {
-        fifo_.insert(key, victim.size);
+        fifo_.insert(victim);
       }
     }
   }

@@ -9,6 +9,7 @@
 #include <optional>
 
 class DRAMCache {
+public:
   struct Item {
     std::string key;
     uint32_t size;
@@ -16,7 +17,6 @@ class DRAMCache {
     bool isInFifo;
   };
 
-public:
   DRAMCache(Stat &stat, uint64_t capacity)
       : stat(stat), capacity(capacity), freeCapacity(capacity) {
     std::cout << fmt::format("DRAM size: {:.2f} MB",

@@ -1,5 +1,6 @@
 #pragma once
 
+#include "DRAMCache.h"
 #include "stat.h"
 #include <cassert>
 #include <cstdint>
@@ -19,6 +20,7 @@ public:
     std::string key;
     uint32_t size{0};
     uint32_t numAccesses{0};
+    uint32_t numAccessesInDram{0};
     uint32_t segId{0};
     uint32_t rotationCounter{0};
     bool isErased{false};
@@ -168,7 +170,7 @@ public:
     }
   }
 
-  std::vector<Fifo::Item> insert(const std::string &key, uint32_t size);
+  std::vector<Fifo::Item> insert(const DRAMCache::Item &dramItem);
 
   std::optional<Fifo::Item> lookup(const std::string &key);
 
@@ -192,6 +194,13 @@ private:
   // key to access counter
   robin_hood::unordered_map<std::string, uint32_t> keyToSegId;
   robin_hood::unordered_map<std::string, Item> overwrittenItems;
+
+  // dram access count holder
+  robin_hood::unordered_map<std::string, std::vector<uint32_t>>
+      keyToDramAccessCounter;
+  // flash access reuse distance
+  robin_hood::unordered_map<std::string, std::vector<uint64_t>>
+      keyToReuseDistance;
 
   uint64_t getGlobalSegmentPtr(uint64_t rotationCounter,
                                uint64_t localSegmentPtr) const {
